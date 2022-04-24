@@ -98,11 +98,13 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
   def setupConnections(self):    
     self.ui.inputSelector.currentNodeChanged.connect(self.onInputSelectorChanged)
     self.ui.startSegmentationButton.clicked.connect(self.onStartSegmentationButtonClicked)
+    self.ui.saveMaskButton.clicked.connect(self.onSaveMaskButtonClicked)
 
   #------------------------------------------------------------------------------
   def disconnect(self):
     self.ui.inputSelector.currentNodeChanged.disconnect()
     self.ui.startSegmentationButton.clicked.disconnect()
+    self.ui.saveMaskButton.clicked.disconnect()
 
   #------------------------------------------------------------------------------
   def updateGUIFromMRML(self, caller=None, event=None):
@@ -113,6 +115,7 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     """    
     # Activate buttons
     self.ui.startSegmentationButton.enabled = (self.ui.inputSelector.currentNode() != None)
+    self.ui.saveMaskButton.enabled = (self.ui.inputSelector.currentNode() != None)
 
   #------------------------------------------------------------------------------
   def onInputSelectorChanged(self):
@@ -129,7 +132,13 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     self.logic.getImageData(inputVolume)
 
     # Segmentation
-    self.logic.startSegmentation()         
+    self.logic.startSegmentation()
+
+  #------------------------------------------------------------------------------
+  def onSaveMaskButtonClicked(self):
+
+    self.logic.saveMask()
+         
 
 #------------------------------------------------------------------------------
 #
@@ -158,6 +167,13 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     Image segmentation.
     """
     print('Starting segmentation...')
+
+  #------------------------------------------------------------------------------
+  def saveMask(self):
+    """
+    Save predicted segmentation.
+    """
+    print('Saving mask...')
 
 #------------------------------------------------------------------------------
 #
