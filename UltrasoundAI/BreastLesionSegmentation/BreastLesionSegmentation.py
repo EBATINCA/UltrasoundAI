@@ -61,6 +61,9 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     # The parameter node had defaults at creation, propagate them to the GUI
     self.updateGUIFromMRML()
 
+    # Check if "Start segmentation button" was clicked and executed successfully
+    self.segmentation_done=False
+
   #------------------------------------------------------------------------------
   def cleanup(self):
     self.disconnect()
@@ -141,12 +144,18 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
       return
 
     # Segmentation
-    self.logic.startSegmentation()
+    self.segmentation_done=self.logic.startSegmentation()
 
   #------------------------------------------------------------------------------
   def onSaveMaskButtonClicked(self):
 
-    self.logic.saveMask()
+    nodeName=self.ui.inputSelector.currentNode().GetName()
+ 
+    if self.segmentation_done:
+      self.logic.saveMask(self.resourcePath('Data/Predicted_mask/{name}.png'.format(name=nodeName)))
+    else:
+      # Error message if the "Start Segmentation" button was never clicked
+      logging.error("Error: There is not a segmented mask to save!")
          
 
 #------------------------------------------------------------------------------
@@ -259,11 +268,20 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     return True
 
   #------------------------------------------------------------------------------
-  def saveMask(self):
+  def saveMask(self,maskPath):
     """
     Save predicted segmentation.
     """
     print('Saving mask...')
+
+    try:
+      cv2.imwrite(maskPath,self.pr_mask)
+    except:
+      logging.error("Failed to save mask")
+      return
+    
+    print('Mask saved correctly!')
+    
 
 #------------------------------------------------------------------------------
 #
