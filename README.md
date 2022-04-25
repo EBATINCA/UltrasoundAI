@@ -3,7 +3,7 @@
 
 ## Prerequisites
 * Check that you have installed PyTorch in Slicer's Python
-* To use the module "Breast Lesion Segmentation", install first the library *segmentation-models-pytorch* in 3D Slicer. It is necessary to load the PyTorch model correctly.</br>
+* To use the module "Breast Lesion Segmentation", install first the library *segmentation-models-pytorch* in 3D Slicer.
 For that, open the Python interactor in Slicer and type the following command:</br>
 ```python
 pip_install('segmentation-models-pytorch')
