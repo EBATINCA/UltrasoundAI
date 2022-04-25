@@ -44,6 +44,11 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     self.logic = BreastLesionSegmentationLogic(self)
 
     slicer.BreastLesionSegmentationWidget = self # ONLY FOR DEVELOPMENT
+    
+    self.exits_mask=False # True when "Start segmentation button" is clicked and executed successfully
+    self.is_model_loaded=False # True when the model has been loaded
+    self.new_model_path=None # Save the path of the model file selected by the user
+
 
   #------------------------------------------------------------------------------
   def setup(self):
@@ -57,9 +62,6 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
 
     # Setup connections
     self.setupConnections()
-    
-    # Check if "Start segmentation button" was clicked and executed successfully
-    self.segmentation_done=False
 
     # The parameter node had defaults at creation, propagate them to the GUI
     self.updateGUIFromMRML()
@@ -100,12 +102,14 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
   #------------------------------------------------------------------------------
   def setupConnections(self):    
     self.ui.inputSelector.currentNodeChanged.connect(self.onInputSelectorChanged)
+    self.ui.loadModelButton.clicked.connect(self.loadModelButtonClicked)
     self.ui.startSegmentationButton.clicked.connect(self.onStartSegmentationButtonClicked)
     self.ui.saveMaskButton.clicked.connect(self.onSaveMaskButtonClicked)
 
   #------------------------------------------------------------------------------
   def disconnect(self):
     self.ui.inputSelector.currentNodeChanged.disconnect()
+    self.ui.loadModelButton.clicked.disconnect()
     self.ui.startSegmentationButton.clicked.disconnect()
     self.ui.saveMaskButton.clicked.disconnect()
 
@@ -117,12 +121,31 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     Calls the updateGUIFromMRML function of all tabs so that they can take care of their own GUI.
     """    
     # Activate buttons
-    self.ui.startSegmentationButton.enabled = (self.ui.inputSelector.currentNode() != None)
-    self.ui.saveMaskButton.enabled = (self.segmentation_done==True)
+    self.ui.loadModelButton.enabled = True
+    self.ui.startSegmentationButton.enabled = (self.ui.inputSelector.currentNode() != None and self.is_model_loaded==True)
+    self.ui.saveMaskButton.enabled = (self.ui.startSegmentationButton.enabled and self.exits_mask==True)
 
   #------------------------------------------------------------------------------
   def onInputSelectorChanged(self):
     
+    # Update GUI
+    self.updateGUIFromMRML()
+ 
+  #------------------------------------------------------------------------------
+  def loadModelButtonClicked(self):
+    
+    #Read the path of the model file
+    self.new_model_path=self.ui.modelPathEdit.currentPath 
+
+    #If there is not a path selected, download the default model in the Resources directory
+    if self.new_model_path!='':
+      modelFilePath=self.new_model_path
+    else:
+      modelFilePath=self.resourcePath('Model/segmentation_model.pth')
+
+    # Load model
+    self.is_model_loaded = self.logic.loadModel(modelFilePath)
+
     # Update GUI
     self.updateGUIFromMRML()
 
@@ -137,14 +160,8 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     # Prepare data
     self.logic.prepareData()
 
-    # Load model
-    success = self.logic.loadModel(self.resourcePath('Model/segmentation_model.pth'))
-    if not success:
-      logging.error("Failed to load model")
-      return
-
     # Segmentation
-    self.segmentation_done=self.logic.startSegmentation()
+    self.exits_mask=self.logic.startSegmentation()
 
     # Update GUI
     self.updateGUIFromMRML()
@@ -154,8 +171,6 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
 
     nodeName=self.ui.inputSelector.currentNode().GetName()
     self.logic.saveMask(self.resourcePath('Data/Predicted_mask/{name}.png'.format(name=nodeName)))
-
-         
 
 #------------------------------------------------------------------------------
 #
@@ -171,6 +186,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
 
     # Image array
     self.imageArray = None
+    self.model=None
 
   #------------------------------------------------------------------------------
   def getImageData(self, volumeNode):
@@ -229,8 +245,10 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
 
     try:
       self.model = torch.load(modelFilePath)
+      print('Model directory:',modelFilePath)
     except:
       self.model = None
+      logging.error("Failed to load model")
       return False
     
     print('Model loaded!') 
