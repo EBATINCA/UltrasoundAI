@@ -134,6 +134,12 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     # Prepare data
     self.logic.prepareData()
 
+    # Load model
+    success = self.logic.loadModel(self.resourcePath('Model/segmentation_model.pth'))
+    if not success:
+      logging.error("Failed to load model")
+      return
+
     # Segmentation
     self.logic.startSegmentation()
 
@@ -201,9 +207,27 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
 
     #Transform numpy array to tensor
     self.img_prepared = np.transpose(img, (2, 0, 1))
-    
+
     print('Data prepared!')
   #------------------------------------------------------------------------------
+
+  def loadModel(self, modelFilePath):
+    """
+    Tries to load PyTorch model for segmentation
+    :param modelFilePath: path where the model file is saved
+    :return: True on success, False on error
+    """
+    print('Loading model...')
+
+    try:
+      self.model = torch.load(modelFilePath)
+    except:
+      self.model = None
+      return False
+    
+    print('Model loaded!') 
+      
+    return True
   
   def startSegmentation(self):
     """
