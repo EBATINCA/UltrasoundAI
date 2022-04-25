@@ -57,12 +57,12 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
 
     # Setup connections
     self.setupConnections()
+    
+    # Check if "Start segmentation button" was clicked and executed successfully
+    self.segmentation_done=False
 
     # The parameter node had defaults at creation, propagate them to the GUI
     self.updateGUIFromMRML()
-
-    # Check if "Start segmentation button" was clicked and executed successfully
-    self.segmentation_done=False
 
   #------------------------------------------------------------------------------
   def cleanup(self):
@@ -118,7 +118,7 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     """    
     # Activate buttons
     self.ui.startSegmentationButton.enabled = (self.ui.inputSelector.currentNode() != None)
-    self.ui.saveMaskButton.enabled = (self.ui.inputSelector.currentNode() != None)
+    self.ui.saveMaskButton.enabled = (self.segmentation_done==True)
 
   #------------------------------------------------------------------------------
   def onInputSelectorChanged(self):
@@ -146,16 +146,15 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     # Segmentation
     self.segmentation_done=self.logic.startSegmentation()
 
+    # Update GUI
+    self.updateGUIFromMRML()
+
   #------------------------------------------------------------------------------
   def onSaveMaskButtonClicked(self):
 
     nodeName=self.ui.inputSelector.currentNode().GetName()
- 
-    if self.segmentation_done:
-      self.logic.saveMask(self.resourcePath('Data/Predicted_mask/{name}.png'.format(name=nodeName)))
-    else:
-      # Error message if the "Start Segmentation" button was never clicked
-      logging.error("Error: There is not a segmented mask to save!")
+    self.logic.saveMask(self.resourcePath('Data/Predicted_mask/{name}.png'.format(name=nodeName)))
+
          
 
 #------------------------------------------------------------------------------
