@@ -226,14 +226,30 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
       return False
     
     print('Model loaded!') 
-      
     return True
   
+  #------------------------------------------------------------------------------
   def startSegmentation(self):
     """
-    Image segmentation.
+    Image segmentation
+    :return: True on success, False on error
     """
-    print('Starting segmentation...')
+    print('Starting segmentation...the process could take a few seconds')
+
+    #Predict the mask
+    try:
+      DEVICE='cuda' if torch.cuda.is_available() else 'cpu'
+      input_image = torch.from_numpy(self.img_prepared).to(DEVICE).unsqueeze(0)
+
+      self.pr_mask = self.model.predict(input_image)
+      self.pr_mask = self.pr_mask.squeeze().cpu().numpy().round()
+      self.pr_mask = self.pr_mask.astype(np.uint8)*255
+    except:
+      logging.error("Can not segment the image!")
+      return False
+
+    print('Segmentation finished!')
+    return True
 
   #------------------------------------------------------------------------------
   def saveMask(self):
