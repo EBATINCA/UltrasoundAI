@@ -161,6 +161,19 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     # Get numpy array from volume node
     self.imageArray = slicer.util.arrayFromVolume(volumeNode)[0]
 
+    # Get image dimensions
+    self.numRows = self.imageArray.shape[0]
+    self.numCols = self.imageArray.shape[1]
+    print('Image dimensions: [%s, %s]' % (str(self.numRows), str(self.numCols)))
+
+    # Get image statistics
+    maxValue = np.max(self.imageArray)
+    minValue = np.min(self.imageArray)
+    avgValue = np.mean(self.imageArray)
+    print('Image maximum value = ', maxValue)
+    print('Image minimum value = ', minValue)
+    print('Image average value = ', avgValue)
+
   #------------------------------------------------------------------------------
   def startSegmentation(self):
     """
