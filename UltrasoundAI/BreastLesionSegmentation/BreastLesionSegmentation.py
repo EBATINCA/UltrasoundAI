@@ -248,6 +248,13 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
       logging.error("Can not segment the image!")
       return False
 
+    #Resize mask
+    self.pr_mask=cv2.resize(self.pr_mask, (self.numCols, self.numRows))
+    
+    #Check mask and ultrasound image shape
+    print('Mask shape:',self.pr_mask.shape)
+    print('Image shape:',self.imageArray.shape)
+
     print('Segmentation finished!')
     return True
 
