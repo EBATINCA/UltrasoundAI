@@ -131,6 +131,9 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     # Get image data
     self.logic.getImageData(inputVolume)
 
+    # Prepare data
+    self.logic.prepareData()
+
     # Segmentation
     self.logic.startSegmentation()
 
@@ -175,6 +178,33 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     print('Image average value = ', avgValue)
 
   #------------------------------------------------------------------------------
+  
+  def prepareData(self):
+    """
+    Prepare image to be process by the PyTorch Model 
+    """
+    print('Preparing data...')
+
+    #To allow segmentation in phantom images (1 channel)
+    #If you comment this line the result is the same in Dataset BUSI (3 Channels)
+    img=cv2.cvtColor(self.imageArray, cv2.COLOR_BGR2RGB) 
+    
+    #Resize
+    img=cv2.resize(img, (256, 256))
+    
+    #Normalize
+    img=img.astype(np.float32)
+    mean, std = img.mean(), img.std()
+    img = (img - mean) / std
+    img = np.clip(img, -1.0, 1.0)
+    img = (img + 1.0) / 2.0
+
+    #Transform numpy array to tensor
+    self.img_prepared = np.transpose(img, (2, 0, 1))
+    
+    print('Data prepared!')
+  #------------------------------------------------------------------------------
+  
   def startSegmentation(self):
     """
     Image segmentation.
