@@ -7,8 +7,19 @@ from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
 
 import logging
-import torch
-import cv2
+
+# Load PyTorch library
+try:
+  import torch
+  DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # define current device
+except:
+  logging.error('PyTorch is not installed. Please, install PyTorch...')
+
+# Load OpenCV
+try:
+  import cv2
+except:
+  logging.error('OpenCV is not installed. Please, install OpenCV...')
 
 #------------------------------------------------------------------------------
 #
@@ -19,10 +30,10 @@ class BreastLesionSegmentation(ScriptedLoadableModule):
 
   def __init__(self, parent):
     ScriptedLoadableModule.__init__(self, parent)
-    self.parent.title = "BreastLesionSegmentation"
+    self.parent.title = "Breast Lesion Segmentation"
     self.parent.categories = ["Ultrasound AI"]
     self.parent.dependencies = []
-    self.parent.contributors = ["David Garcia Mato (Ebatinca), Maria Rosa Rodriguez Luque"]
+    self.parent.contributors = ["David Garcia Mato (Ebatinca), Maria Rosa Rodriguez Luque (ULPGC)"]
     self.parent.helpText = """ Module to segment lesions in US images using deep learning. """
     self.parent.acknowledgementText = """EBATINCA, S.L."""
 
@@ -127,7 +138,7 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
 
   #------------------------------------------------------------------------------
   def onInputSelectorChanged(self):
-    
+
     # Update GUI
     self.updateGUIFromMRML()
  
@@ -186,7 +197,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
 
     # Image array
     self.imageArray = None
-    self.model=None
+    self.model = None
 
   #------------------------------------------------------------------------------
   def getImageData(self, volumeNode):
@@ -242,15 +253,13 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     :return: True on success, False on error
     """
     print('Loading model...')
-
     try:
-      self.model = torch.load(modelFilePath)
       print('Model directory:',modelFilePath)
+      self.model = torch.load(modelFilePath, map_location = torch.device(DEVICE))
     except:
       self.model = None
       logging.error("Failed to load model")
       return False
-    
     print('Model loaded!') 
     return True
   
@@ -264,9 +273,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
 
     #Predict the mask
     try:
-      DEVICE='cuda' if torch.cuda.is_available() else 'cpu'
       input_image = torch.from_numpy(self.img_prepared).to(DEVICE).unsqueeze(0)
-
       self.pr_mask = self.model.predict(input_image)
       self.pr_mask = self.pr_mask.squeeze().cpu().numpy().round()
       self.pr_mask = self.pr_mask.astype(np.uint8)*255
