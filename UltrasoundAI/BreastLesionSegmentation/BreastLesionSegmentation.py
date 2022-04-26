@@ -110,9 +110,13 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     # "setMRMLScene(vtkMRMLScene*)" slot.
     uiWidget.setMRMLScene(slicer.mrmlScene)
 
+    # Customize widgets
+    self.ui.modelPathEdit.currentPath = self.logic.defaultModelFilePath
+
   #------------------------------------------------------------------------------
   def setupConnections(self):    
     self.ui.inputSelector.currentNodeChanged.connect(self.onInputSelectorChanged)
+    self.ui.modelPathEdit.currentPathChanged.connect(self.onModelPathChanged)
     self.ui.loadModelButton.clicked.connect(self.loadModelButtonClicked)
     self.ui.startSegmentationButton.clicked.connect(self.onStartSegmentationButtonClicked)
     self.ui.saveMaskButton.clicked.connect(self.onSaveMaskButtonClicked)
@@ -120,6 +124,7 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
   #------------------------------------------------------------------------------
   def disconnect(self):
     self.ui.inputSelector.currentNodeChanged.disconnect()
+    self.ui.modelPathEdit.currentPathChanged.disconnect()
     self.ui.loadModelButton.clicked.disconnect()
     self.ui.startSegmentationButton.clicked.disconnect()
     self.ui.saveMaskButton.clicked.disconnect()
@@ -145,6 +150,10 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
   def onInputSelectorChanged(self):
     # Update GUI
     self.updateGUIFromMRML()
+ 
+  #------------------------------------------------------------------------------
+  def onModelPathChanged(self):
+    print('Current path: ', self.ui.modelPathEdit.currentPath)
  
   #------------------------------------------------------------------------------
   def loadModelButtonClicked(self):
@@ -201,11 +210,13 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
   def __init__(self, widgetInstance, parent=None):
     ScriptedLoadableModuleLogic.__init__(self, parent)
     VTKObservationMixin.__init__(self)
+    self.moduleWidget = widgetInstance
 
     # Input image array
     self.inputImageArray = None
 
     # Segmentation model
+    self.defaultModelFilePath = self.moduleWidget.resourcePath('Model/segmentation_model.pth')
     self.segmentationModel = None
 
     # Red slice
