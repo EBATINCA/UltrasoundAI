@@ -56,7 +56,7 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
 
     slicer.BreastLesionSegmentationWidget = self # ONLY FOR DEVELOPMENT
     
-    self.exits_mask=False # True when "Start segmentation button" is clicked and executed successfully
+    self.exist_mask=False # True when "Start segmentation button" is clicked and executed successfully
     self.is_model_loaded=False # True when the model has been loaded
     self.new_model_path=None # Save the path of the model file selected by the user
 
@@ -134,7 +134,7 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     # Activate buttons
     self.ui.loadModelButton.enabled = True
     self.ui.startSegmentationButton.enabled = (self.ui.inputSelector.currentNode() != None and self.is_model_loaded==True)
-    self.ui.saveMaskButton.enabled = (self.ui.startSegmentationButton.enabled and self.exits_mask==True)
+    self.ui.saveMaskButton.enabled = (self.ui.startSegmentationButton.enabled and self.exist_mask==True)
 
   #------------------------------------------------------------------------------
   def onInputSelectorChanged(self):
@@ -172,7 +172,7 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     self.logic.prepareData()
 
     # Segmentation
-    self.exits_mask=self.logic.startSegmentation()
+    self.exist_mask=self.logic.startSegmentation(inputVolume)
 
     # Update GUI
     self.updateGUIFromMRML()
@@ -198,6 +198,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     # Image array
     self.imageArray = None
     self.model = None
+    self.maskVolume_created=False
 
   #------------------------------------------------------------------------------
   def getImageData(self, volumeNode):
@@ -264,7 +265,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     return True
   
   #------------------------------------------------------------------------------
-  def startSegmentation(self):
+  def startSegmentation(self,volumeNode):
     """
     Image segmentation
     :return: True on success, False on error
@@ -285,8 +286,19 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     self.pr_mask=cv2.resize(self.pr_mask, (self.numCols, self.numRows))
     
     #Check mask and ultrasound image shape
-    print('Mask shape:',self.pr_mask.shape)
-    print('Image shape:',self.imageArray.shape)
+    print('Mask dimensions:',self.pr_mask.shape)
+    print('Image dimensions:',self.imageArray.shape)
+
+    #Create the segmentation volume 
+    if self.maskVolume_created==False:
+       self.getMaskVolume(volumeNode)
+
+    #Update "Segmentation image" volume content
+    segmentation=np.expand_dims(self.pr_mask,0)
+    print('Segmentation dimensions:',segmentation.shape)
+
+    slicer.util.updateVolumeFromArray(self.outputVolumeNode, segmentation)
+
 
     print('Segmentation finished!')
     return True
@@ -305,6 +317,21 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
       return
     
     print('Mask saved correctly!')
+
+  #------------------------------------------------------------------------------
+  def getMaskVolume(self,volumeNode):
+    """
+    Save predicted segmentation.
+    """
+    shNode = slicer.mrmlScene.GetSubjectHierarchyNode()
+    inputVolumeItemID = shNode.GetItemByDataNode(volumeNode)
+    outputVolumeItemID = slicer.modules.subjecthierarchy.logic().CloneSubjectHierarchyItem(shNode, inputVolumeItemID)
+    self.outputVolumeNode = shNode.GetItemDataNode(outputVolumeItemID)
+    self.outputVolumeNode.SetName('Segmented image')
+    self.maskVolume_created=True
+    
+#------------------------------------------------------------------------------
+
     
 
 #------------------------------------------------------------------------------
