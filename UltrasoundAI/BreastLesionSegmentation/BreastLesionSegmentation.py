@@ -252,6 +252,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
   def displayVolumeInSliceView(self, volumeNode):
     # Display input volume node in red slice background
     self.redSliceLogic.GetSliceCompositeNode().SetBackgroundVolumeID(volumeNode.GetID())
+    self.redSliceLogic.FitSliceToAll()
 
   #------------------------------------------------------------------------------
   def prepareData(self):
