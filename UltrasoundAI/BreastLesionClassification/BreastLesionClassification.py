@@ -1,5 +1,12 @@
 import logging
 import os
+import torch
+import torchvision
+from torch.autograd import Variable
+import PIL
+from PIL import Image
+import numpy as np
+import time
 
 import vtk
 
@@ -106,6 +113,7 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     self.logic = None
     self._parameterNode = None
     self._updatingGUIFromParameterNode = False
+    self.model = None
 
   def setup(self):
     """
@@ -137,10 +145,6 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     # These connections ensure that whenever user changes some settings on the GUI, that is saved in the MRML scene
     # (in the selected parameter node).
     self.ui.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
-    self.ui.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
-    self.ui.imageThresholdSliderWidget.connect("valueChanged(double)", self.updateParameterNodeFromGUI)
-    self.ui.invertOutputCheckBox.connect("toggled(bool)", self.updateParameterNodeFromGUI)
-    self.ui.invertedOutputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
 
     # Buttons
     self.ui.applyButton.connect('clicked(bool)', self.onApplyButton)
@@ -233,13 +237,9 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
 
     # Update node selectors and sliders
     self.ui.inputSelector.setCurrentNode(self._parameterNode.GetNodeReference("InputVolume"))
-    self.ui.outputSelector.setCurrentNode(self._parameterNode.GetNodeReference("OutputVolume"))
-    self.ui.invertedOutputSelector.setCurrentNode(self._parameterNode.GetNodeReference("OutputVolumeInverse"))
-    self.ui.imageThresholdSliderWidget.value = float(self._parameterNode.GetParameter("Threshold"))
-    self.ui.invertOutputCheckBox.checked = (self._parameterNode.GetParameter("Invert") == "true")
 
     # Update buttons states and tooltips
-    if self._parameterNode.GetNodeReference("InputVolume") and self._parameterNode.GetNodeReference("OutputVolume"):
+    if self._parameterNode.GetNodeReference("InputVolume"):
       self.ui.applyButton.toolTip = "Compute output volume"
       self.ui.applyButton.enabled = True
     else:
@@ -261,10 +261,6 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     wasModified = self._parameterNode.StartModify()  # Modify all properties in a single batch
 
     self._parameterNode.SetNodeReferenceID("InputVolume", self.ui.inputSelector.currentNodeID)
-    self._parameterNode.SetNodeReferenceID("OutputVolume", self.ui.outputSelector.currentNodeID)
-    self._parameterNode.SetParameter("Threshold", str(self.ui.imageThresholdSliderWidget.value))
-    self._parameterNode.SetParameter("Invert", "true" if self.ui.invertOutputCheckBox.checked else "false")
-    self._parameterNode.SetNodeReferenceID("OutputVolumeInverse", self.ui.invertedOutputSelector.currentNodeID)
 
     self._parameterNode.EndModify(wasModified)
 
@@ -272,17 +268,18 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     """
     Run processing when user clicks "Apply" button.
     """
-    with slicer.util.tryWithErrorDisplay("Failed to compute results.", waitCursor=True):
+    #with slicer.util.tryWithErrorDisplay("Failed to compute results.", waitCursor=True):
+    # Get input volume
+    inputVolume = self.ui.inputSelector.currentNode()
+    # Get image data
+    self.logic.getImageData(inputVolume)
+    modelFilePath = self.ui.PathLineEdit.currentPath
 
-      # Compute output
-      self.logic.process(self.ui.inputSelector.currentNode(), self.ui.outputSelector.currentNode(),
-        self.ui.imageThresholdSliderWidget.value, self.ui.invertOutputCheckBox.checked)
-
-      # Compute inverted output (if needed)
-      if self.ui.invertedOutputSelector.currentNode():
-        # If additional output volume is selected then result with inverted threshold is written there
-        self.logic.process(self.ui.inputSelector.currentNode(), self.ui.invertedOutputSelector.currentNode(),
-          self.ui.imageThresholdSliderWidget.value, not self.ui.invertOutputCheckBox.checked, showResult=False)
+    # Classification
+    [ValBen, ValMal, ValNor] = self.logic.startClassification(modelFilePath)
+    self.ui.ValorBenigno.text= str(ValBen)
+    self.ui.ValorMaligno.text = str(ValMal)
+    self.ui.ValorNormal.text = str(ValNor)
 
 
 #
@@ -345,6 +342,65 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
 
     stopTime = time.time()
     logging.info(f'Processing completed in {stopTime-startTime:.2f} seconds')
+  #------------------------------------------------------------------------------
+  def getImageData(self, volumeNode):
+
+    # Get numpy array from volume node
+    self.imageArray = slicer.util.arrayFromVolume(volumeNode)[0]
+
+    # Get image dimensions
+    self.numRows = self.imageArray.shape[0]
+    self.numCols = self.imageArray.shape[1]
+    print('Image dimensions: [%s, %s]' % (str(self.numRows), str(self.numCols)))
+
+    # Get image statistics
+    maxValue = np.max(self.imageArray)
+    minValue = np.min(self.imageArray)
+    avgValue = np.mean(self.imageArray)
+    print('Image maximum value = ', maxValue)
+    print('Image minimum value = ', minValue)
+    print('Image average value = ', avgValue)
+  #------------------------------------------------------------------------------
+  def loadModel(self, modelFilePath):
+    """
+    Tries to load PyTorch model for segmentation
+    :param modelFilePath: path where the model file is saved
+    :return: True on success, False on error
+    """
+    print('Loading model...')
+
+    try:
+      self.model = torch.load(modelFilePath)
+    except:
+      self.model = None
+      return False
+    
+    print('Model loaded!') 
+    return True
+  #------------------------------------------------------------------------------
+  def startClassification(self, modelFilePath):
+    """
+    Image classification.
+    """
+    #model = self.loadModel(modelFilePath)
+    data_transforms = torchvision.transforms.Compose([
+        torchvision.transforms.Resize(299),
+        torchvision.transforms.CenterCrop(299),
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+    image = Image.fromarray(self.imageArray)
+    #image = self.imageArray
+    image_trans = data_transforms(image).float()
+    image_var = Variable(image_trans, requires_grad=True)
+    image_clas = image_var.unsqueeze(0)
+    print('Starting classification...')
+    model = torch.load(modelFilePath)
+    tens = model(image_clas)
+    percentage = torch.nn.functional.softmax(tens, dim=1)[0] * 100
+    ValMal = percentage.data.cpu().numpy()[1]
+    ValBen = percentage.data.cpu().numpy()[0]
+    ValNor = percentage.data.cpu().numpy()[2]
+    return ValBen, ValMal, ValNor
 
 
 #
