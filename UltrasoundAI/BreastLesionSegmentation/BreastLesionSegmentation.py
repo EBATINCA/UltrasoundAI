@@ -136,9 +136,13 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     self.ui.startSegmentationButton.enabled = (self.ui.inputSelector.currentNode() != None and self.is_model_loaded==True)
     self.ui.saveMaskButton.enabled = (self.ui.startSegmentationButton.enabled and self.exist_mask==True)
 
+    # Display selected volume in red slice view
+    inputVolume = self.ui.inputSelector.currentNode()
+    if inputVolume:
+      self.logic.displayVolumeInSliceView(inputVolume)
+
   #------------------------------------------------------------------------------
   def onInputSelectorChanged(self):
-
     # Update GUI
     self.updateGUIFromMRML()
  
@@ -171,8 +175,11 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     # Prepare data
     self.logic.prepareData()
 
-    # Segmentation
+    # Compute segmentation
     self.exist_mask=self.logic.startSegmentation(inputVolume)
+
+    # Display segmentation
+    self.logic.displaySegmentation()
 
     # Update GUI
     self.updateGUIFromMRML()
@@ -180,8 +187,8 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
   #------------------------------------------------------------------------------
   def onSaveMaskButtonClicked(self):
 
-    nodeName=self.ui.inputSelector.currentNode().GetName()
-    self.logic.saveMask(self.resourcePath('Data/Predicted_mask/{name}.png'.format(name=nodeName)))
+    nodeName = self.ui.inputSelector.currentNode().GetName()
+    self.logic.saveMask(self.resourcePath('Data/Predicted_mask/{name}.png'.format(name = nodeName)))
 
 #------------------------------------------------------------------------------
 #
@@ -195,32 +202,47 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     ScriptedLoadableModuleLogic.__init__(self, parent)
     VTKObservationMixin.__init__(self)
 
-    # Image array
-    self.imageArray = None
-    self.model = None
-    self.maskVolume_created=False
+    # Input image array
+    self.inputImageArray = None
+
+    # Segmentation model
+    self.segmentationModel = None
+
+    # Red slice
+    self.redSliceLogic = slicer.app.layoutManager().sliceWidget("Red").sliceLogic()
+
+    # Output mask
+    self.outputVolumeNode = None
+
+    # Output segmentation
+    self.segmentationNode = None
+    self.segmentEditorNode = None
 
   #------------------------------------------------------------------------------
   def getImageData(self, volumeNode):
 
     # Get numpy array from volume node
-    self.imageArray = slicer.util.arrayFromVolume(volumeNode)[0]
+    self.inputImageArray = slicer.util.arrayFromVolume(volumeNode)[0]
 
     # Get image dimensions
-    self.numRows = self.imageArray.shape[0]
-    self.numCols = self.imageArray.shape[1]
+    self.numRows = self.inputImageArray.shape[0]
+    self.numCols = self.inputImageArray.shape[1]
     print('Image dimensions: [%s, %s]' % (str(self.numRows), str(self.numCols)))
 
     # Get image statistics
-    maxValue = np.max(self.imageArray)
-    minValue = np.min(self.imageArray)
-    avgValue = np.mean(self.imageArray)
+    maxValue = np.max(self.inputImageArray)
+    minValue = np.min(self.inputImageArray)
+    avgValue = np.mean(self.inputImageArray)
     print('Image maximum value = ', maxValue)
     print('Image minimum value = ', minValue)
     print('Image average value = ', avgValue)
 
   #------------------------------------------------------------------------------
-  
+  def displayVolumeInSliceView(self, volumeNode):
+    # Display input volume node in red slice background
+    self.redSliceLogic.GetSliceCompositeNode().SetBackgroundVolumeID(volumeNode.GetID())
+
+  #------------------------------------------------------------------------------
   def prepareData(self):
     """
     Prepare image to be process by the PyTorch Model 
@@ -229,7 +251,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
 
     #To allow segmentation in phantom images (1 channel)
     #If you comment this line the result is the same in Dataset BUSI (3 Channels)
-    img=cv2.cvtColor(self.imageArray, cv2.COLOR_BGR2RGB) 
+    img=cv2.cvtColor(self.inputImageArray, cv2.COLOR_BGR2RGB) 
     
     #Resize
     img=cv2.resize(img, (256, 256))
@@ -256,55 +278,85 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     print('Loading model...')
     try:
       print('Model directory:',modelFilePath)
-      self.model = torch.load(modelFilePath, map_location = torch.device(DEVICE))
+      self.segmentationModel = torch.load(modelFilePath, map_location = torch.device(DEVICE))
     except:
-      self.model = None
+      self.segmentationModel = None
       logging.error("Failed to load model")
       return False
     print('Model loaded!') 
     return True
   
   #------------------------------------------------------------------------------
-  def startSegmentation(self,volumeNode):
+  def startSegmentation(self, volumeNode):
     """
     Image segmentation
     :return: True on success, False on error
     """
     print('Starting segmentation...the process could take a few seconds')
 
-    #Predict the mask
+    # Predict the mask using segmentation model
     try:
       input_image = torch.from_numpy(self.img_prepared).to(DEVICE).unsqueeze(0)
-      self.pr_mask = self.model.predict(input_image)
+      self.pr_mask = self.segmentationModel.predict(input_image)
       self.pr_mask = self.pr_mask.squeeze().cpu().numpy().round()
       self.pr_mask = self.pr_mask.astype(np.uint8)*255
     except:
       logging.error("Can not segment the image!")
       return False
 
-    #Resize mask
+    # Resize mask
     self.pr_mask=cv2.resize(self.pr_mask, (self.numCols, self.numRows))
     
-    #Check mask and ultrasound image shape
+    # Check mask and ultrasound image shape
     print('Mask dimensions:',self.pr_mask.shape)
-    print('Image dimensions:',self.imageArray.shape)
+    print('Image dimensions:',self.inputImageArray.shape)
 
-    #Create the segmentation volume 
-    if self.maskVolume_created==False:
-       self.getMaskVolume(volumeNode)
-
-    #Update "Segmentation image" volume content
-    segmentation=np.expand_dims(self.pr_mask,0)
-    print('Segmentation dimensions:',segmentation.shape)
-
-    slicer.util.updateVolumeFromArray(self.outputVolumeNode, segmentation)
-
+    # Update mask volume
+    self.updateMaskVolume(volumeNode, self.pr_mask)
 
     print('Segmentation finished!')
     return True
 
   #------------------------------------------------------------------------------
-  def saveMask(self,maskPath):
+  def displaySegmentation(self):
+    """
+    Display segmentation in slice view
+    :return: True on success, False on error
+    """
+    if self.outputVolumeNode:
+      # Delete previous segmentation if any
+      if self.segmentationNode:
+        slicer.mrmlScene.RemoveNode(self.segmentationNode)
+        self.segmentationNode = None
+
+      # Delete previous segment editor node if any
+      if self.segmentEditorNode:
+        slicer.mrmlScene.RemoveNode(self.segmentEditorNode)
+        self.segmentEditorNode = None
+
+      # Create segmentation
+      self.segmentationNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
+      self.segmentationNode.CreateDefaultDisplayNodes() # only needed for display
+      self.segmentationNode.SetReferenceImageGeometryParameterFromVolumeNode(self.outputVolumeNode)
+      addedSegmentID = self.segmentationNode.GetSegmentation().AddEmptySegment("Breast Lesion")
+
+      # Create segment editor to get access to effects
+      segmentEditorWidget = slicer.qMRMLSegmentEditorWidget()
+      segmentEditorWidget.setMRMLScene(slicer.mrmlScene)
+      self.segmentEditorNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentEditorNode")
+      segmentEditorWidget.setMRMLSegmentEditorNode(self.segmentEditorNode)
+      segmentEditorWidget.setSegmentationNode(self.segmentationNode)
+      segmentEditorWidget.setMasterVolumeNode(self.outputVolumeNode)
+
+      # Thresholding
+      segmentEditorWidget.setActiveEffectByName("Threshold")
+      effect = segmentEditorWidget.activeEffect()
+      effect.setParameter("MinimumThreshold","35")
+      effect.setParameter("MaximumThreshold","695")
+      effect.self().onApply()
+
+  #------------------------------------------------------------------------------
+  def saveMask(self, maskPath):
     """
     Save predicted segmentation.
     """
@@ -319,19 +371,24 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     print('Mask saved correctly!')
 
   #------------------------------------------------------------------------------
-  def getMaskVolume(self,volumeNode):
+  def updateMaskVolume(self, volumeNode, maskArray):
     """
-    Save predicted segmentation.
-    """
-    shNode = slicer.mrmlScene.GetSubjectHierarchyNode()
-    inputVolumeItemID = shNode.GetItemByDataNode(volumeNode)
-    outputVolumeItemID = slicer.modules.subjecthierarchy.logic().CloneSubjectHierarchyItem(shNode, inputVolumeItemID)
-    self.outputVolumeNode = shNode.GetItemDataNode(outputVolumeItemID)
-    self.outputVolumeNode.SetName('Segmented image')
-    self.maskVolume_created=True
-    
-#------------------------------------------------------------------------------
+    Update mask volume node from model prediction.
+    """    
+    # Create the segmentation volume if it does not exist
+    if self.outputVolumeNode == None:
+      shNode = slicer.mrmlScene.GetSubjectHierarchyNode()
+      inputVolumeItemID = shNode.GetItemByDataNode(volumeNode)
+      outputVolumeItemID = slicer.modules.subjecthierarchy.logic().CloneSubjectHierarchyItem(shNode, inputVolumeItemID)
+      self.outputVolumeNode = shNode.GetItemDataNode(outputVolumeItemID)
+      self.outputVolumeNode.SetName('segmentation')
 
+    # Adjust mask dimensions
+    segmentation = np.expand_dims(maskArray, 0)
+    print('Segmentation dimensions:', segmentation.shape)
+    
+    # Update segmentation volume from mask
+    slicer.util.updateVolumeFromArray(self.outputVolumeNode, segmentation)
     
 
 #------------------------------------------------------------------------------
