@@ -56,7 +56,14 @@
      </property>
      <layout class="QVBoxLayout" name="verticalLayout_2">
       <item>
-       <widget class="ctkPathLineEdit" name="PathLineEdit"/>
+       <widget class="ctkPathLineEdit" name="PathLineEdit">
+        <property name="showBrowseButton">
+         <bool>true</bool>
+        </property>
+        <property name="showHistoryButton">
+         <bool>true</bool>
+        </property>
+       </widget>
       </item>
       <item>
        <widget class="QPushButton" name="ModelButton">
@@ -97,42 +104,51 @@
       <item row="2" column="0">
        <widget class="QLabel" name="label_8">
         <property name="text">
-         <string>Normal</string>
+         <string>Normal:</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
         </property>
        </widget>
       </item>
       <item row="0" column="0">
        <widget class="QLabel" name="label_6">
         <property name="text">
-         <string>Benigno</string>
+         <string>Benigno:</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
         </property>
        </widget>
       </item>
       <item row="1" column="0">
        <widget class="QLabel" name="label_7">
         <property name="text">
-         <string>Maligno</string>
+         <string>Maligno:</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
         </property>
        </widget>
       </item>
       <item row="0" column="1">
        <widget class="QLabel" name="ValorBenigno">
         <property name="text">
-         <string>TextLabel</string>
+         <string>-</string>
         </property>
        </widget>
       </item>
       <item row="1" column="1">
        <widget class="QLabel" name="ValorMaligno">
         <property name="text">
-         <string>TextLabel</string>
+         <string>-</string>
         </property>
        </widget>
       </item>
       <item row="2" column="1">
        <widget class="QLabel" name="ValorNormal">
         <property name="text">
-         <string>TextLabel</string>
+         <string>-</string>
         </property>
        </widget>
       </item>

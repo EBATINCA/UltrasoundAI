@@ -14,6 +14,11 @@ import slicer
 from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
 
+try:
+  import cv2
+except:
+  logging.error('OpenCV is not installed. Please, install OpenCV...')
+
 
 #
 # BreastLesionClassification
@@ -406,7 +411,10 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
         torchvision.transforms.CenterCrop(299),
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
-    image = Image.fromarray(self.imageArray)
+    #To allow segmentation in phantom images (1 channel)
+    #If you comment this line the result is the same in Dataset BUSI (3 Channels)
+    img=cv2.cvtColor(self.imageArray, cv2.COLOR_BGR2RGB)
+    image = Image.fromarray(img)
     image_trans = data_transforms(image).float()
     image_var = Variable(image_trans, requires_grad=True)
     image_clas = image_var.unsqueeze(0)
