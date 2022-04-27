@@ -59,7 +59,7 @@
        <widget class="ctkPathLineEdit" name="PathLineEdit"/>
       </item>
       <item>
-       <widget class="QPushButton" name="pushButton_2">
+       <widget class="QPushButton" name="ModelButton">
         <property name="text">
          <string>Load Model</string>
         </property>

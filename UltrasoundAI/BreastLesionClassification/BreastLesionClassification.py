@@ -148,9 +148,13 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
 
     # Buttons
     self.ui.applyButton.connect('clicked(bool)', self.onApplyButton)
+    self.ui.ModelButton.connect('clicked(bool)', self.onModelButton)
 
     # Make sure parameter node is initialized (needed for module reload)
     self.initializeParameterNode()
+
+    #Custom model initialization
+    self.ui.PathLineEdit.currentPath = self.resourcePath('Model/classification_model.pth')
 
   def cleanup(self):
     """
@@ -237,6 +241,9 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
 
     # Update node selectors and sliders
     self.ui.inputSelector.setCurrentNode(self._parameterNode.GetNodeReference("InputVolume"))
+    inputVolume = self.ui.inputSelector.currentNode()
+    if inputVolume:
+      self.logic.displayVolumeInSliceView(inputVolume)
 
     # Update buttons states and tooltips
     if self._parameterNode.GetNodeReference("InputVolume"):
@@ -273,14 +280,19 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     inputVolume = self.ui.inputSelector.currentNode()
     # Get image data
     self.logic.getImageData(inputVolume)
-    modelFilePath = self.ui.PathLineEdit.currentPath
+    model = self.model
 
     # Classification
-    [ValBen, ValMal, ValNor] = self.logic.startClassification(modelFilePath)
+    [ValBen, ValMal, ValNor] = self.logic.startClassification(model)
     self.ui.ValorBenigno.text= str(ValBen)
     self.ui.ValorMaligno.text = str(ValMal)
     self.ui.ValorNormal.text = str(ValNor)
 
+  def onModelButton(self):
+   modelFilePath = self.ui.PathLineEdit.currentPath
+   self.model = torch.load(modelFilePath)
+   if self.model is not None:
+    print("Model loaded")
 
 #
 # BreastLesionClassificationLogic
@@ -301,6 +313,8 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     Called when the logic class is instantiated. Can be used for initializing member variables.
     """
     ScriptedLoadableModuleLogic.__init__(self)
+    # Red slice
+    self.redSliceLogic = slicer.app.layoutManager().sliceWidget("Red").sliceLogic()
 
   def setDefaultParameters(self, parameterNode):
     """
@@ -361,6 +375,11 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     print('Image minimum value = ', minValue)
     print('Image average value = ', avgValue)
   #------------------------------------------------------------------------------
+  def displayVolumeInSliceView(self, volumeNode):
+    # Display input volume node in red slice background
+    self.redSliceLogic.GetSliceCompositeNode().SetBackgroundVolumeID(volumeNode.GetID())
+    self.redSliceLogic.FitSliceToAll()
+  #------------------------------------------------------------------------------
   def loadModel(self, modelFilePath):
     """
     Tries to load PyTorch model for segmentation
@@ -378,23 +397,22 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     print('Model loaded!') 
     return True
   #------------------------------------------------------------------------------
-  def startClassification(self, modelFilePath):
+  def startClassification(self, model):
     """
     Image classification.
     """
-    #model = self.loadModel(modelFilePath)
     data_transforms = torchvision.transforms.Compose([
         torchvision.transforms.Resize(299),
         torchvision.transforms.CenterCrop(299),
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
     image = Image.fromarray(self.imageArray)
-    #image = self.imageArray
     image_trans = data_transforms(image).float()
     image_var = Variable(image_trans, requires_grad=True)
     image_clas = image_var.unsqueeze(0)
     print('Starting classification...')
-    model = torch.load(modelFilePath)
+    if model is None:
+     print("No model loaded")
     tens = model(image_clas)
     percentage = torch.nn.functional.softmax(tens, dim=1)[0] * 100
     ValMal = percentage.data.cpu().numpy()[1]
