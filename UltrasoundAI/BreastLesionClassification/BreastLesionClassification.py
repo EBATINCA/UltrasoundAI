@@ -118,6 +118,7 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     self.logic = None
     self._parameterNode = None
     self._updatingGUIFromParameterNode = False
+    self.model = None
 
   def setup(self):
     """
@@ -284,22 +285,19 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     inputVolume = self.ui.inputSelector.currentNode()
     # Get image data
     self.logic.getImageData(inputVolume)
+    model = self.model
 
     # Classification
-    [ValBen, ValMal, ValNor, mostProbableClass] = self.logic.startClassification()
-
-    # Display probabilities in UI
+    [ValBen, ValMal, ValNor] = self.logic.startClassification(model)
     self.ui.ValorBenigno.text= str(ValBen)
     self.ui.ValorMaligno.text = str(ValMal)
     self.ui.ValorNormal.text = str(ValNor)
 
-    # Display most probable class in UI
-    self.ui.mostProbableClassLabel.text = mostProbableClass
-
   def onModelButton(self):
+  #When the Load Model button is pressed, the function takes the path from the UI and calls the loadModel function to get the corresponding model
    modelFilePath = self.ui.PathLineEdit.currentPath
-   self.logic.model = torch.load(modelFilePath)
-   if self.logic.model is not None:
+   self.model = self.logic.loadModel(modelFilePath)
+   if self.model is not None:
     print("Model loaded")
 
 #
@@ -323,9 +321,6 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     ScriptedLoadableModuleLogic.__init__(self)
     # Red slice
     self.redSliceLogic = slicer.app.layoutManager().sliceWidget("Red").sliceLogic()
-
-    # Classification model
-    self.model = None
 
   def setDefaultParameters(self, parameterNode):
     """
@@ -398,20 +393,21 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     :return: True on success, False on error
     """
     print('Loading model...')
-
+    #Model is loaded using path given from the PathLine in UI
     try:
-      self.model = torch.load(modelFilePath)
+      model = torch.load(modelFilePath)
     except:
-      self.model = None
+      model = None
       return False
     
-    print('Model loaded!') 
-    return True
+    #Output is the loaded model
+    return model
   #------------------------------------------------------------------------------
-  def startClassification(self):
+  def startClassification(self, model):
     """
     Image classification.
     """
+    #Define transforms that will be applied to image. These are needed to use the model
     data_transforms = torchvision.transforms.Compose([
         torchvision.transforms.Resize(299),
         torchvision.transforms.CenterCrop(299),
@@ -420,14 +416,17 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     #To allow segmentation in phantom images (1 channel)
     #If you comment this line the result is the same in Dataset BUSI (3 Channels)
     img=cv2.cvtColor(self.imageArray, cv2.COLOR_BGR2RGB)
+    #Images are transformed to go through model
     image = Image.fromarray(img)
     image_trans = data_transforms(image).float()
     image_var = Variable(image_trans, requires_grad=True)
     image_clas = image_var.unsqueeze(0)
     print('Starting classification...')
-    if self.model is None:
+    if model is None:
      print("No model loaded")
-    tens = self.model(image_clas)
+    #Model is applied to image
+    #Output of model is a tensor that expresses the probability of each class. Tensor is divided into variables and shown as perccentages
+    tens = model(image_clas)
     percentage = torch.nn.functional.softmax(tens, dim=1)[0] * 100
     ValMal = percentage.data.cpu().numpy()[1]
     ValBen = percentage.data.cpu().numpy()[0]
@@ -435,19 +434,8 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     ValMal = round(ValMal,2)
     ValBen = round(ValBen,2)
     ValNor = round(ValNor,2)
-
-    # Get most probable class
-    maxValue = max(ValMal, ValBen, ValNor)
-    if maxValue == ValMal:
-      mostProbableClass = 'Malignant'
-    elif maxValue == ValBen:
-      mostProbableClass = 'Benign'
-    elif maxValue == ValNor:
-      mostProbableClass = 'Normal'
-    else:
-      mostProbableClass = 'None'
-
-    return ValBen, ValMal, ValNor, mostProbableClass
+    #Output is the prcentage of benign, malign, or no tumor. They are given as numbers with 2 decimals
+    return ValBen, ValMal, ValNor
 
 
 #
