@@ -426,6 +426,9 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     ValMal = percentage.data.cpu().numpy()[1]
     ValBen = percentage.data.cpu().numpy()[0]
     ValNor = percentage.data.cpu().numpy()[2]
+    ValMal = round(ValMal,2)
+    ValBen = round(ValBen,2)
+    ValNor = round(ValNor,2)
     return ValBen, ValMal, ValNor
 
 
