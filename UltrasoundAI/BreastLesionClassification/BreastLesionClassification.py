@@ -288,10 +288,11 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     model = self.model
 
     # Classification
-    [ValBen, ValMal, ValNor] = self.logic.startClassification(model)
+    [ValBen, ValMal, ValNor, mostProbableClass] = self.logic.startClassification(model)
     self.ui.ValorBenigno.text= str(ValBen)
     self.ui.ValorMaligno.text = str(ValMal)
     self.ui.ValorNormal.text = str(ValNor)
+    self.ui.mostProbableClassLabel.text = mostProbableClass
 
   def onModelButton(self):
    modelFilePath = self.ui.PathLineEdit.currentPath
@@ -429,7 +430,19 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     ValMal = round(ValMal,2)
     ValBen = round(ValBen,2)
     ValNor = round(ValNor,2)
-    return ValBen, ValMal, ValNor
+
+    # Get most probable class
+    maxValue = max(ValMal, ValBen, ValNor)
+    if maxValue == ValMal:
+      mostProbableClass = 'Malignant'
+    elif maxValue == ValBen:
+      mostProbableClass = 'Benign'
+    elif maxValue == ValNor:
+      mostProbableClass = 'Normal'
+    else:
+      mostProbableClass = 'None'
+
+    return ValBen, ValMal, ValNor, mostProbableClass
 
 
 #
