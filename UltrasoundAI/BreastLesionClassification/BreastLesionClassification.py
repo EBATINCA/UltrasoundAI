@@ -152,7 +152,7 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
 
     # Buttons
     self.ui.applyButton.connect('clicked(bool)', self.onApplyButton)
-    self.ui.ModelButton.connect('clicked(bool)', self.onModelButton)
+    self.ui.loadModelButton.connect('clicked(bool)', self.onloadModelButton)
 
     # Make sure parameter node is initialized (needed for module reload)
     self.initializeParameterNode()
@@ -286,19 +286,21 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     self.logic.getImageData(inputVolume)
 
     # Classification
-    [ValBen, ValMal, ValNor, mostProbableClass] = self.logic.startClassification()
+    [valBen, valMal, valNor, mostProbableClass] = self.logic.startClassification()
 
     # Display probabilities in UI
-    self.ui.ValorBenigno.text= str(ValBen)
-    self.ui.ValorMaligno.text = str(ValMal)
-    self.ui.ValorNormal.text = str(ValNor)
+    self.ui.benignValue.text= str(valBen)
+    self.ui.malignValue.text = str(valMal)
+    self.ui.normalValue.text = str(valNor)
 
     # Display most probable class in UI
     self.ui.mostProbableClassLabel.text = mostProbableClass
 
-  def onModelButton(self):
+  def onloadModelButton(self):
+  #Acquire path from the line in UI
    modelFilePath = self.ui.PathLineEdit.currentPath
-   self.logic.model = torch.load(modelFilePath)
+   #Load model using the function in the logic section
+   self.logic.loadModel(modelFilePath)
    if self.logic.model is not None:
     print("Model loaded")
 
@@ -399,55 +401,67 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     """
     print('Loading model...')
 
+    #Use torch function to load model from given path
     try:
       self.model = torch.load(modelFilePath)
     except:
       self.model = None
       return False
     
-    print('Model loaded!') 
     return True
   #------------------------------------------------------------------------------
   def startClassification(self):
     """
     Image classification.
     """
+    #Definition of transformations applied to image (resizing, transformation into tensor and normalizing values). These are necessary to go through the model
     data_transforms = torchvision.transforms.Compose([
         torchvision.transforms.Resize(299),
         torchvision.transforms.CenterCrop(299),
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+
     #To allow segmentation in phantom images (1 channel)
     #If you comment this line the result is the same in Dataset BUSI (3 Channels)
     img=cv2.cvtColor(self.imageArray, cv2.COLOR_BGR2RGB)
+
+    #Transform the image from numerical array to PIL Image format
     image = Image.fromarray(img)
+
+    #Previously defined transforms are applied, plus image is unsqueezed to have enough dimensions to go through model
     image_trans = data_transforms(image).float()
     image_var = Variable(image_trans, requires_grad=True)
     image_clas = image_var.unsqueeze(0)
+
     print('Starting classification...')
     if self.model is None:
      print("No model loaded")
+
+    #Image is taken through model, which gives a tensor with one value per class as output
     tens = self.model(image_clas)
+
+    #Values are turned into percentage and rounded to 2 decimals
     percentage = torch.nn.functional.softmax(tens, dim=1)[0] * 100
-    ValMal = percentage.data.cpu().numpy()[1]
-    ValBen = percentage.data.cpu().numpy()[0]
-    ValNor = percentage.data.cpu().numpy()[2]
-    ValMal = round(ValMal,2)
-    ValBen = round(ValBen,2)
-    ValNor = round(ValNor,2)
+    valMal = percentage.data.cpu().numpy()[1]
+    valBen = percentage.data.cpu().numpy()[0]
+    valNor = percentage.data.cpu().numpy()[2]
+    valMal = round(valMal,2)
+    valBen = round(valBen,2)
+    valNor = round(valNor,2)
 
     # Get most probable class
-    maxValue = max(ValMal, ValBen, ValNor)
-    if maxValue == ValMal:
+    maxValue = max(valMal, valBen, valNor)
+    if maxValue == valMal:
       mostProbableClass = 'Malignant'
-    elif maxValue == ValBen:
+    elif maxValue == valBen:
       mostProbableClass = 'Benign'
-    elif maxValue == ValNor:
+    elif maxValue == valNor:
       mostProbableClass = 'Normal'
     else:
       mostProbableClass = 'None'
 
-    return ValBen, ValMal, ValNor, mostProbableClass
+    #Output is the percentage corresponding to each class plus the most probable class expressed as a string
+    return valBen, valMal, valNor, mostProbableClass
 
 
 #
