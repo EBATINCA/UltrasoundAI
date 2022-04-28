@@ -118,7 +118,6 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     self.logic = None
     self._parameterNode = None
     self._updatingGUIFromParameterNode = False
-    self.model = None
 
   def setup(self):
     """
@@ -285,19 +284,22 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     inputVolume = self.ui.inputSelector.currentNode()
     # Get image data
     self.logic.getImageData(inputVolume)
-    model = self.model
 
     # Classification
-    [ValBen, ValMal, ValNor, mostProbableClass] = self.logic.startClassification(model)
+    [ValBen, ValMal, ValNor, mostProbableClass] = self.logic.startClassification()
+
+    # Display probabilities in UI
     self.ui.ValorBenigno.text= str(ValBen)
     self.ui.ValorMaligno.text = str(ValMal)
     self.ui.ValorNormal.text = str(ValNor)
+
+    # Display most probable class in UI
     self.ui.mostProbableClassLabel.text = mostProbableClass
 
   def onModelButton(self):
    modelFilePath = self.ui.PathLineEdit.currentPath
-   self.model = torch.load(modelFilePath)
-   if self.model is not None:
+   self.logic.model = torch.load(modelFilePath)
+   if self.logic.model is not None:
     print("Model loaded")
 
 #
@@ -321,6 +323,9 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     ScriptedLoadableModuleLogic.__init__(self)
     # Red slice
     self.redSliceLogic = slicer.app.layoutManager().sliceWidget("Red").sliceLogic()
+
+    # Classification model
+    self.model = None
 
   def setDefaultParameters(self, parameterNode):
     """
@@ -403,7 +408,7 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     print('Model loaded!') 
     return True
   #------------------------------------------------------------------------------
-  def startClassification(self, model):
+  def startClassification(self):
     """
     Image classification.
     """
@@ -420,9 +425,9 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic):
     image_var = Variable(image_trans, requires_grad=True)
     image_clas = image_var.unsqueeze(0)
     print('Starting classification...')
-    if model is None:
+    if self.model is None:
      print("No model loaded")
-    tens = model(image_clas)
+    tens = self.model(image_clas)
     percentage = torch.nn.functional.softmax(tens, dim=1)[0] * 100
     ValMal = percentage.data.cpu().numpy()[1]
     ValBen = percentage.data.cpu().numpy()[0]
