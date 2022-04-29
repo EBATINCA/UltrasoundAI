@@ -115,13 +115,13 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
   #------------------------------------------------------------------------------
   def setupConnections(self):    
     self.ui.inputSelector.currentNodeChanged.connect(self.onInputSelectorChanged)
-    self.ui.applyButton.connect('clicked(bool)', self.onApplyButton)
+    self.ui.startClassificationButton.connect('clicked(bool)', self.onstartClassificationButton)
     self.ui.loadModelButton.connect('clicked(bool)', self.onloadModelButton)
 
   #------------------------------------------------------------------------------
   def disconnect(self):
     self.ui.inputSelector.currentNodeChanged.disconnect()
-    self.ui.applyButton.clicked.disconnect()
+    self.ui.startClassificationButton.clicked.disconnect()
     self.ui.loadModelButton.clicked.disconnect()
 
   #------------------------------------------------------------------------------
@@ -135,6 +135,9 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     inputVolume = self.ui.inputSelector.currentNode()
     if inputVolume:
       self.logic.displayVolumeInSliceView(inputVolume)
+
+    # Activate buttons
+    self.ui.startClassificationButton.enabled = (self.ui.inputSelector.currentNode() != None and self.logic.classificationModel != None)
 
   #------------------------------------------------------------------------------
   def onInputSelectorChanged(self):
@@ -153,7 +156,7 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     self.updateGUIFromMRML()
 
   #------------------------------------------------------------------------------
-  def onApplyButton(self):
+  def onstartClassificationButton(self):
     # Get input volume
     inputVolume = self.ui.inputSelector.currentNode()
 
