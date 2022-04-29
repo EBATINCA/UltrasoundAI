@@ -115,14 +115,14 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
   #------------------------------------------------------------------------------
   def setupConnections(self):    
     self.ui.inputSelector.currentNodeChanged.connect(self.onInputSelectorChanged)
-    self.ui.startClassificationButton.connect('clicked(bool)', self.onstartClassificationButton)
-    self.ui.loadModelButton.connect('clicked(bool)', self.onloadModelButton)
+    self.ui.loadModelButton.connect('clicked(bool)', self.onLoadModelButton)
+    self.ui.startClassificationButton.connect('clicked(bool)', self.onStartClassificationButton)
 
   #------------------------------------------------------------------------------
   def disconnect(self):
     self.ui.inputSelector.currentNodeChanged.disconnect()
-    self.ui.startClassificationButton.clicked.disconnect()
     self.ui.loadModelButton.clicked.disconnect()
+    self.ui.startClassificationButton.clicked.disconnect()
 
   #------------------------------------------------------------------------------
   def updateGUIFromMRML(self, caller=None, event=None):
@@ -145,7 +145,7 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     self.updateGUIFromMRML()
  
   #------------------------------------------------------------------------------
-  def onloadModelButton(self):
+  def onLoadModelButton(self):
     # Acquire path from the line in UI
     modelFilePath = self.ui.PathLineEdit.currentPath
 
@@ -156,7 +156,7 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     self.updateGUIFromMRML()
 
   #------------------------------------------------------------------------------
-  def onstartClassificationButton(self):
+  def onStartClassificationButton(self):
     # Get input volume
     inputVolume = self.ui.inputSelector.currentNode()
 
