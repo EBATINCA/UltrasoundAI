@@ -197,7 +197,7 @@ class BreastLesionClassificationLogic(ScriptedLoadableModuleLogic, VTKObservatio
     self.inputImageArray = None
 
     # Classification model
-    self.defaultModelFilePath = self.moduleWidget.resourcePath('Model/classification_model.pth')
+    self.defaultModelFilePath = self.moduleWidget.resourcePath('Model/classification_model_001.pth')
     self.classificationModel = None
 
     # Red slice
