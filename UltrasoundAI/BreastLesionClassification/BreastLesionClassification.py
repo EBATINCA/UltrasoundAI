@@ -114,11 +114,13 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
 
   #------------------------------------------------------------------------------
   def setupConnections(self):    
+    self.ui.inputSelector.currentNodeChanged.connect(self.onInputSelectorChanged)
     self.ui.applyButton.connect('clicked(bool)', self.onApplyButton)
     self.ui.loadModelButton.connect('clicked(bool)', self.onloadModelButton)
 
   #------------------------------------------------------------------------------
   def disconnect(self):
+    self.ui.inputSelector.currentNodeChanged.disconnect()
     self.ui.applyButton.clicked.disconnect()
     self.ui.loadModelButton.clicked.disconnect()
 
@@ -129,13 +131,26 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
 
     Calls the updateGUIFromMRML function of all tabs so that they can take care of their own GUI.
     """    
-    # Activate buttons
-    
-
     # Display selected volume in red slice view
     inputVolume = self.ui.inputSelector.currentNode()
     if inputVolume:
       self.logic.displayVolumeInSliceView(inputVolume)
+
+  #------------------------------------------------------------------------------
+  def onInputSelectorChanged(self):
+    # Update GUI
+    self.updateGUIFromMRML()
+ 
+  #------------------------------------------------------------------------------
+  def onloadModelButton(self):
+    # Acquire path from the line in UI
+    modelFilePath = self.ui.PathLineEdit.currentPath
+
+    # Load model using the function in the logic section
+    self.logic.loadModel(modelFilePath)
+
+    # Update GUI
+    self.updateGUIFromMRML()
 
   #------------------------------------------------------------------------------
   def onApplyButton(self):
@@ -156,13 +171,9 @@ class BreastLesionClassificationWidget(ScriptedLoadableModuleWidget, VTKObservat
     # Display most probable class in UI
     self.ui.mostProbableClassLabel.text = mostProbableClass
 
-  #------------------------------------------------------------------------------
-  def onloadModelButton(self):
-    # Acquire path from the line in UI
-    modelFilePath = self.ui.PathLineEdit.currentPath
+    # Update GUI
+    self.updateGUIFromMRML()
 
-    # Load model using the function in the logic section
-    self.logic.loadModel(modelFilePath)
 
 #------------------------------------------------------------------------------
 #
