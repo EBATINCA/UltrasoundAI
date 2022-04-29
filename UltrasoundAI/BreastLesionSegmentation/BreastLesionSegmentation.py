@@ -7,6 +7,7 @@ from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
 
 import logging
+import SegmentStatistics
 
 # Load PyTorch library
 try:
@@ -55,12 +56,13 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     self.logic = BreastLesionSegmentationLogic(self)
 
     slicer.BreastLesionSegmentationWidget = self # ONLY FOR DEVELOPMENT
-    
-    self.exist_mask=False # True when "Start segmentation button" is clicked and executed successfully
+
+    # Check the model is loaded
     self.is_model_loaded=False # True when the model has been loaded
-    self.new_model_path=None # Save the path of the model file selected by the user
-
-
+    
+    # Check the mask is created
+    self.exist_mask=False # True when "Start segmentation button" is clicked and executed successfully
+    
   #------------------------------------------------------------------------------
   def setup(self):
     """
@@ -117,9 +119,11 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
   def setupConnections(self):    
     self.ui.inputSelector.currentNodeChanged.connect(self.onInputSelectorChanged)
     self.ui.modelPathEdit.currentPathChanged.connect(self.onModelPathChanged)
-    self.ui.loadModelButton.clicked.connect(self.loadModelButtonClicked)
+    self.ui.loadModelButton.clicked.connect(self.onloadModelButtonClicked)
     self.ui.startSegmentationButton.clicked.connect(self.onStartSegmentationButtonClicked)
     self.ui.saveMaskButton.clicked.connect(self.onSaveMaskButtonClicked)
+    self.ui.drawSegmentationRadioButton.clicked.connect(self.onDrawSegmentation)
+    self.ui.drawROIRadioButton.clicked.connect(self.onDrawROI)
 
   #------------------------------------------------------------------------------
   def disconnect(self):
@@ -128,6 +132,8 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     self.ui.loadModelButton.clicked.disconnect()
     self.ui.startSegmentationButton.clicked.disconnect()
     self.ui.saveMaskButton.clicked.disconnect()
+    self.ui.drawSegmentationRadioButton.clicked.disconnect()
+    self.ui.drawROIRadioButton.clicked.disconnect()
 
   #------------------------------------------------------------------------------
   def updateGUIFromMRML(self, caller=None, event=None):
@@ -138,8 +144,8 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     """    
     # Activate buttons
     self.ui.loadModelButton.enabled = True
-    self.ui.startSegmentationButton.enabled = (self.ui.inputSelector.currentNode() != None and self.is_model_loaded==True)
-    self.ui.saveMaskButton.enabled = (self.ui.startSegmentationButton.enabled and self.exist_mask==True)
+    self.ui.startSegmentationButton.enabled = (self.ui.inputSelector.currentNode() != None and self.is_model_loaded)
+    self.ui.saveMaskButton.enabled = (self.ui.startSegmentationButton.enabled and self.exist_mask)
 
     # Display selected volume in red slice view
     inputVolume = self.ui.inputSelector.currentNode()
@@ -156,19 +162,10 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     print('Current path: ', self.ui.modelPathEdit.currentPath)
  
   #------------------------------------------------------------------------------
-  def loadModelButtonClicked(self):
-    
-    #Read the path of the model file
-    self.new_model_path=self.ui.modelPathEdit.currentPath 
-
-    #If there is not a path selected, download the default model in the Resources directory
-    if self.new_model_path!='':
-      modelFilePath=self.new_model_path
-    else:
-      modelFilePath=self.resourcePath('Model/segmentation_model.pth')
+  def onloadModelButtonClicked(self):
 
     # Load model
-    self.is_model_loaded = self.logic.loadModel(modelFilePath)
+    self.is_model_loaded = self.logic.loadModel(self.ui.modelPathEdit.currentPath )
 
     # Update GUI
     self.updateGUIFromMRML()
@@ -190,15 +187,32 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
     # Display segmentation
     self.logic.displaySegmentation()
 
+    # Show statistics
+    self.logic.showStatistics()
+
+    # "Draw Segmentation" Radio Button clicked by default
+    self.ui.drawSegmentationRadioButton.checked=True
+
     # Update GUI
     self.updateGUIFromMRML()
+  
+  #------------------------------------------------------------------------------
+  def onDrawSegmentation(self):
+    # Draw segmentation
+    if self.exist_mask:
+      self.logic.drawSegmentation()
 
+  #------------------------------------------------------------------------------
+  def onDrawROI(self):
+    # Draw ROI
+    if self.exist_mask:
+      self.logic.drawROI()
+      
   #------------------------------------------------------------------------------
   def onSaveMaskButtonClicked(self):
 
     nodeName = self.ui.inputSelector.currentNode().GetName()
     self.logic.saveMask(self.resourcePath('Data/Predicted_mask/{name}.png'.format(name = nodeName)))
-
 #------------------------------------------------------------------------------
 #
 # BreastLesionSegmentationLogic
@@ -228,6 +242,12 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     # Output segmentation
     self.segmentationNode = None
     self.segmentEditorNode = None
+
+    # Center point in RAS
+    self.pointListNode=None
+
+    # Bounding Box
+    self.roiNode=None
 
   #------------------------------------------------------------------------------
   def getImageData(self, volumeNode):
@@ -280,7 +300,6 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
 
     print('Data prepared!')
   #------------------------------------------------------------------------------
-
   def loadModel(self, modelFilePath):
     """
     Tries to load PyTorch model for segmentation
@@ -350,7 +369,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
       self.segmentationNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
       self.segmentationNode.CreateDefaultDisplayNodes() # only needed for display
       self.segmentationNode.SetReferenceImageGeometryParameterFromVolumeNode(self.outputVolumeNode)
-      addedSegmentID = self.segmentationNode.GetSegmentation().AddEmptySegment("Breast Lesion")
+      self.addedSegmentID = self.segmentationNode.GetSegmentation().AddEmptySegment("Breast Lesion")
 
       # Create segment editor to get access to effects
       segmentEditorWidget = slicer.qMRMLSegmentEditorWidget()
@@ -365,6 +384,15 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
       effect = segmentEditorWidget.activeEffect()
       effect.setParameter("MinimumThreshold","35")
       effect.setParameter("MaximumThreshold","695")
+      effect.self().onApply()
+
+      # Split island to segments
+      segmentEditorWidget.setActiveEffectByName("Islands")
+      effect = segmentEditorWidget.activeEffect()
+      operationName = 'SPLIT_ISLANDS_TO_SEGMENTS'
+      minsize = 500
+      effect.setParameter("Operation", operationName)
+      effect.setParameter("MinimumSize",minsize)
       effect.self().onApply()
 
   #------------------------------------------------------------------------------
@@ -401,7 +429,153 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     
     # Update segmentation volume from mask
     slicer.util.updateVolumeFromArray(self.outputVolumeNode, segmentation)
+
+  #------------------------------------------------------------------------------
+  def showStatistics(self):
+    """
+    Measure and show lesion statistics including: Center point in RAS, area in mm2 and bounding box
+    """    
+    self.segStatLogic = SegmentStatistics.SegmentStatisticsLogic()
+    self.segStatLogic.getParameterNode().SetParameter("Segmentation", self.segmentationNode.GetID())
+
+    # Get and draw the centroid of the lesion
+    self.centerPoint()
+
+    # Get the area of the lesion
+    self.getArea()
+
+    # Get the Roundness
+    self.getRoundness()
+
+    # Draw a bounding box around each lesion 
+    self.getParalellBoundingBoxes()
+
+  #------------------------------------------------------------------------------
+  def centerPoint(self):
+    """
+    Get and display the centroid of the breast lesion
+    """    
+    # Compute centroids
+    self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.centroid_ras.enabled", str(True))
+    self.segStatLogic.computeStatistics()
+    stats = self.segStatLogic.getStatistics()
+
+    # Delete previous markup point if any
+    if self.pointListNode:
+      slicer.mrmlScene.RemoveNode(self.pointListNode)
+      self.pointListNode = None
     
+    # Place a markup point in each centroid
+    self.pointListNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
+    self.pointListNode.SetName("Center point")
+
+    for segmentId in stats["SegmentIDs"]:
+      centroid_ras = stats[segmentId,"LabelmapSegmentStatisticsPlugin.centroid_ras"]
+      segmentName = self.segmentationNode.GetSegmentation().GetSegment(segmentId).GetName()
+      self.pointListNode.AddFiducialFromArray(centroid_ras, segmentName)
+      print('Center of lesion: ', centroid_ras)
+    
+    # Change the display options
+    self.pointListNode.GetMarkupsDisplayNode().SetSelectedColor(0.847,0.184,0.137)
+    self.pointListNode.GetMarkupsDisplayNode().SetGlyphTypeFromString('ThickCross2D')
+    self.pointListNode.GetMarkupsDisplayNode().SetPointLabelsVisibility(False)
+    self.pointListNode.GetMarkupsDisplayNode().SetGlyphScale(4)
+
+  #------------------------------------------------------------------------------
+  def getArea(self):
+    """
+    Get the area of the breast lesion in mm2
+    """
+    self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.surface_area_mm2.enabled", str(True))
+    self.segStatLogic.computeStatistics()
+    stats = self.segStatLogic.getStatistics()
+
+    for segmentId in stats["SegmentIDs"]:
+      area_mm2 = stats[segmentId,"LabelmapSegmentStatisticsPlugin.surface_area_mm2"]
+      print('Area of the lesion: ', area_mm2)
+    
+  #------------------------------------------------------------------------------
+  def getRoundness(self):
+    """
+    Get the roudnness of the breast lesion
+    """
+    self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.roundness.enabled", str(True))
+    self.segStatLogic.computeStatistics()
+    stats = self.segStatLogic.getStatistics()
+
+    for segmentId in stats["SegmentIDs"]:
+      roudnness = stats[segmentId,"LabelmapSegmentStatisticsPlugin.roundness"]
+      print('Roudnness of the lesion: ', roudnness)
+    
+  #------------------------------------------------------------------------------
+  def getParalellBoundingBoxes(self):
+    """
+    Draw ROI of each lesion
+    """
+    self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.obb_origin_ras.enabled",str(True))
+    self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.obb_diameter_mm.enabled",str(True))
+    self.segStatLogic.computeStatistics()
+    stats = self.segStatLogic.getStatistics()
+
+    # Delete previous bounding box if any
+    if self.roiNode:
+      pos=0
+      roi_nodes=slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")
+      for i in iter(slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")):
+        slicer.mrmlScene.RemoveNode(roi_nodes[pos])
+        pos+=1
+      self.roiNode=None
+    
+    # Draw ROI    
+    for segmentId in stats["SegmentIDs"]:
+      obb_origin_ras = stats[segmentId,"LabelmapSegmentStatisticsPlugin.centroid_ras"]
+      obb_diameter_mm = np.array(stats[segmentId,"LabelmapSegmentStatisticsPlugin.obb_diameter_mm"])
+
+      self.roiNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode")
+      self.roiNode.SetName("ROI "+segmentId)
+      self.roiNode.SetCenter(obb_origin_ras)
+      self.roiNode.SetSize(obb_diameter_mm[2],obb_diameter_mm[1],obb_diameter_mm[0])
+
+      self.roiNode.GetMarkupsDisplayNode().SetTextScale(0)
+      self.roiNode.GetMarkupsDisplayNode().SetSelectedColor(0.847,0.184,0.137)
+      self.roiNode.GetMarkupsDisplayNode().SetGlyphScale(0)
+      self.roiNode.GetMarkupsDisplayNode().SetFillOpacity(False)
+
+    # Hide ROIs Nodes by default
+    pos=0
+    roi_nodes=slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")
+    for i in iter(slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")):
+      roi_nodes[pos].SetDisplayVisibility(False)
+      pos+=1
+  #------------------------------------------------------------------------------
+  def drawSegmentation(self):
+    """
+    Draw the segmented mask
+    """
+    #Hide ROIs Nodes
+    pos=0
+    roi_nodes=slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")
+    for i in iter(slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")):
+      roi_nodes[pos].SetDisplayVisibility(False)
+      pos+=1
+    
+    #Show segmentation Node
+    self.segmentationNode.SetDisplayVisibility(True)
+
+  #------------------------------------------------------------------------------
+  def drawROI(self):
+    """
+    Draw the ROI
+    """
+    #Hide Segmentation Node
+    self.segmentationNode.SetDisplayVisibility(False)
+
+    #Show ROI Node
+    pos=0
+    roi_nodes=slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")
+    for i in iter(slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")):
+      roi_nodes[pos].SetDisplayVisibility(True)
+      pos+=1
 
 #------------------------------------------------------------------------------
 #
