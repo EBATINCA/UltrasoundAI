@@ -249,6 +249,9 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     # Bounding Box
     self.roiNode=None
 
+    # Number of lesions
+    self.numberLesion=0
+
   #------------------------------------------------------------------------------
   def getImageData(self, volumeNode):
 
@@ -433,19 +436,28 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
   #------------------------------------------------------------------------------
   def showStatistics(self):
     """
-    Measure and show lesion statistics including: Center point in RAS, area in mm2 and bounding box
+    Measure and show lesion statistics including: Center point in RAS, area in mm2, roundness,elongation and bounding boxes
     """    
     self.segStatLogic = SegmentStatistics.SegmentStatisticsLogic()
     self.segStatLogic.getParameterNode().SetParameter("Segmentation", self.segmentationNode.GetID())
 
-    # Get and draw the centroid of the lesion
+    # Delete previous columns in table if any
+    if self.numberLesion != 0:
+      for i in range (0,self.numberLesion):
+        self.moduleWidget.ui.lesionStatistics.removeColumn(0)
+      self.numberLesion = 0
+
+    # Compute and display the centroid of the lesion
     self.centerPoint()
 
-    # Get the area of the lesion
+    # Compute the area of the lesion
     self.getArea()
 
-    # Get the Roundness
+    # Compute the roundness
     self.getRoundness()
+
+    # Compute the elongation
+    self.getElongation()
 
     # Draw a bounding box around each lesion 
     self.getParalellBoundingBoxes_option1()
@@ -453,7 +465,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
   #------------------------------------------------------------------------------
   def centerPoint(self):
     """
-    Get and display the centroid of the breast lesion
+    Compute and display the centroid of each breast lesion
     """    
     # Compute centroids
     self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.centroid_ras.enabled", str(True))
@@ -474,7 +486,22 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
       segmentName = self.segmentationNode.GetSegmentation().GetSegment(segmentId).GetName()
       self.pointListNode.AddFiducialFromArray(centroid_ras, segmentName)
       print('Center of lesion: ', centroid_ras)
-    
+
+      # Fill the table with the information obtained
+        # Add a new column per lesion
+      self.moduleWidget.ui.lesionStatistics.insertColumn(self.numberLesion)
+
+        # Fill the Lesion ID in the table
+      segmentId_text= qt.QTableWidgetItem()
+      segmentId_text.setText(segmentId)
+      self.moduleWidget.ui.lesionStatistics.setItem(0,self.numberLesion,segmentId_text)
+
+        # Fill the coordinates of the center point in the table
+      centroid_text= qt.QTableWidgetItem()
+      centroid_text.setText(np.around(centroid_ras,7))
+      self.moduleWidget.ui.lesionStatistics.setItem(4,self.numberLesion,centroid_text)
+      self.numberLesion+=1
+      
     # Change the display options
     self.pointListNode.GetMarkupsDisplayNode().SetSelectedColor(0.847,0.184,0.137)
     self.pointListNode.GetMarkupsDisplayNode().SetGlyphTypeFromString('ThickCross2D')
@@ -484,29 +511,61 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
   #------------------------------------------------------------------------------
   def getArea(self):
     """
-    Get the area of the breast lesion in mm2
+    Get the area of each breast lesion in mm2
     """
     self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.surface_area_mm2.enabled", str(True))
     self.segStatLogic.computeStatistics()
     stats = self.segStatLogic.getStatistics()
 
+    self.numberLesion = 0
     for segmentId in stats["SegmentIDs"]:
       area_mm2 = stats[segmentId,"LabelmapSegmentStatisticsPlugin.surface_area_mm2"]
       print('Area of the lesion: ', area_mm2)
+
+      # Fill the area in the table
+      area_text= qt.QTableWidgetItem()
+      area_text.setText(round(area_mm2,7))
+      self.moduleWidget.ui.lesionStatistics.setItem(1,self.numberLesion,area_text)
+      self.numberLesion+=1
     
   #------------------------------------------------------------------------------
   def getRoundness(self):
     """
-    Get the roudnness of the breast lesion
+    Get the roudnness of each breast lesion
     """
     self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.roundness.enabled", str(True))
     self.segStatLogic.computeStatistics()
     stats = self.segStatLogic.getStatistics()
 
+    self.numberLesion = 0
     for segmentId in stats["SegmentIDs"]:
       roudnness = stats[segmentId,"LabelmapSegmentStatisticsPlugin.roundness"]
       print('Roudnness of the lesion: ', roudnness)
 
+      # Fill the roundness in the table
+      roudnness_text= qt.QTableWidgetItem()
+      roudnness_text.setText(round(roudnness,7))
+      self.moduleWidget.ui.lesionStatistics.setItem(2,self.numberLesion,roudnness_text)
+      self.numberLesion+=1
+
+  def getElongation(self):
+    """
+    Get the elongation of each breast lesion
+    """
+    self.segStatLogic.getParameterNode().SetParameter('LabelmapSegmentStatisticsPlugin.elongation.enabled', str(True))
+    self.segStatLogic.computeStatistics()
+    stats = self.segStatLogic.getStatistics()
+
+    self.numberLesion = 0
+    for segmentId in stats["SegmentIDs"]:
+      elongation = stats[segmentId,"LabelmapSegmentStatisticsPlugin.elongation"]
+      print('Elongation of the lesion: ', elongation)
+
+      # Fill the elongation in the table
+      elongation_text= qt.QTableWidgetItem()
+      elongation_text.setText(round(elongation,7))
+      self.moduleWidget.ui.lesionStatistics.setItem(3,self.numberLesion,elongation_text)
+      self.numberLesion+=1
   #------------------------------------------------------------------------------
   def getParalellBoundingBoxes_option1(self):
     """
@@ -578,7 +637,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     self.roiNode.GetMarkupsDisplayNode().SetGlyphScale(0)
     self.roiNode.GetMarkupsDisplayNode().SetFillOpacity(False)
 
-    # Hide ROIs Nodes by default
+    # Hide ROI Node by default
     self.roiNode.SetDisplayVisibility(False)
   #------------------------------------------------------------------------------
   def drawSegmentation(self):
