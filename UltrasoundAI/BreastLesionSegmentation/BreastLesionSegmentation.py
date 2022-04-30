@@ -448,7 +448,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     self.getRoundness()
 
     # Draw a bounding box around each lesion 
-    self.getParalellBoundingBoxes()
+    self.getParalellBoundingBoxes_option1()
 
   #------------------------------------------------------------------------------
   def centerPoint(self):
@@ -506,11 +506,11 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     for segmentId in stats["SegmentIDs"]:
       roudnness = stats[segmentId,"LabelmapSegmentStatisticsPlugin.roundness"]
       print('Roudnness of the lesion: ', roudnness)
-    
+
   #------------------------------------------------------------------------------
-  def getParalellBoundingBoxes(self):
+  def getParalellBoundingBoxes_option1(self):
     """
-    Draw ROI of each lesion
+    Draw ROI of each lesion (Margins are not precise: Needs to be improved)
     """
     self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.obb_origin_ras.enabled",str(True))
     self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.obb_diameter_mm.enabled",str(True))
@@ -536,6 +536,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
       self.roiNode.SetCenter(obb_origin_ras)
       self.roiNode.SetSize(obb_diameter_mm[2],obb_diameter_mm[1],obb_diameter_mm[0])
 
+    # Modify display features 
       self.roiNode.GetMarkupsDisplayNode().SetTextScale(0)
       self.roiNode.GetMarkupsDisplayNode().SetSelectedColor(0.847,0.184,0.137)
       self.roiNode.GetMarkupsDisplayNode().SetGlyphScale(0)
@@ -547,6 +548,40 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     for i in iter(slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")):
       roi_nodes[pos].SetDisplayVisibility(False)
       pos+=1
+
+  #------------------------------------------------------------------------------
+  def getParalellBoundingBoxes_option2(self):
+    """
+    Draw ROI of the segmentation node (Margins are precise but do not distinguish between lesions)
+    """
+
+    # Delete previous bounding box if any
+    if self.roiNode:
+        slicer.mrmlScene.RemoveNode(self.roiNode)
+        self.roiNode=None
+    
+    # Draw ROI   
+    bounds = np.zeros(6)
+    self.segmentationNode.GetRASBounds(bounds)
+
+    self.roiNode=slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode")
+
+    box = vtk.vtkBoundingBox(bounds)
+    center = [0.0, 0.0, 0.0]
+    box.GetCenter(center)
+
+    self.roiNode=slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode")
+    self.roiNode.SetXYZ(center)
+    self.roiNode.SetRadiusXYZ(box.GetLength(0)/2, box.GetLength(1)/2, box.GetLength(2)/2)
+
+    # Modify display features 
+    self.roiNode.GetMarkupsDisplayNode().SetTextScale(0)
+    self.roiNode.GetMarkupsDisplayNode().SetSelectedColor(0.847,0.184,0.137)
+    self.roiNode.GetMarkupsDisplayNode().SetGlyphScale(0)
+    self.roiNode.GetMarkupsDisplayNode().SetFillOpacity(False)
+
+    # Hide ROIs Nodes by default
+    self.roiNode.SetDisplayVisibility(False)
   #------------------------------------------------------------------------------
   def drawSegmentation(self):
     """
