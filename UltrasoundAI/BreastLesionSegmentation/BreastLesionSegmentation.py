@@ -564,8 +564,6 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     bounds = np.zeros(6)
     self.segmentationNode.GetRASBounds(bounds)
 
-    self.roiNode=slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode")
-
     box = vtk.vtkBoundingBox(bounds)
     center = [0.0, 0.0, 0.0]
     box.GetCenter(center)
