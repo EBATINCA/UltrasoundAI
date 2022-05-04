@@ -248,6 +248,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
 
     # Bounding Box
     self.roiNode=None
+    self.transformNode=None
 
     # Number of lesions
     self.numberLesion=0
@@ -460,7 +461,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     self.getElongation()
 
     # Draw a bounding box around each lesion 
-    self.getParalellBoundingBoxes_option1()
+    self.getOrientedBoundingBoxes()
 
   #------------------------------------------------------------------------------
   def centerPoint(self):
@@ -639,7 +640,79 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
 
     # Hide ROI Node by default
     self.roiNode.SetDisplayVisibility(False)
+
   #------------------------------------------------------------------------------
+  def getOrientedBoundingBoxes(self):
+    """
+    Draw an oriented bounding box per each lesion
+    """
+    # Compute bounding boxes
+    self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.obb_origin_ras.enabled",str(True))
+    self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.obb_diameter_mm.enabled",str(True))
+    self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.obb_direction_ras_x.enabled",str(True))
+    self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.obb_direction_ras_y.enabled",str(True))
+    self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.obb_direction_ras_z.enabled",str(True))
+    self.segStatLogic.computeStatistics()
+    stats = self.segStatLogic.getStatistics()
+
+    # Delete previous Transform point if any
+    if self.transformNode:
+      transform_Nodes=slicer.util.getNodesByClass("vtkMRMLTransformNode")
+      pos=0
+      for i in iter(slicer.util.getNodesByClass("vtkMRMLTransformNode")):
+        slicer.mrmlScene.RemoveNode(transform_Nodes[pos])
+        pos+=1
+      self.transformNode=None
+      pos=0
+
+    # Delete previous roi if any
+    if self.roiNode:
+      roi_nodes=slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")
+      for i in iter(slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")):
+        slicer.mrmlScene.RemoveNode(roi_nodes[pos])
+        pos+=1
+      self.roiNode=None
+      pos=0
+    
+    # Draw ROI for each oriented bounding box
+    self.number_lesions=0
+    for segmentId in stats["SegmentIDs"]:
+      # Get bounding box
+      obb_origin_ras = np.array(stats[segmentId,"LabelmapSegmentStatisticsPlugin.obb_origin_ras"])
+      obb_diameter_mm = np.array(stats[segmentId,"LabelmapSegmentStatisticsPlugin.obb_diameter_mm"])
+      obb_direction_ras_x = np.array(stats[segmentId,"LabelmapSegmentStatisticsPlugin.obb_direction_ras_x"])
+      obb_direction_ras_y = np.array(stats[segmentId,"LabelmapSegmentStatisticsPlugin.obb_direction_ras_y"])
+      obb_direction_ras_z = np.array(stats[segmentId,"LabelmapSegmentStatisticsPlugin.obb_direction_ras_z"])
+
+      # Create ROI
+      segment = self.segmentationNode.GetSegmentation().GetSegment(segmentId)
+      self.roiNode=slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode")
+      self.roiNode.SetName(segment.GetName() + " bounding box")
+      self.roiNode.SetXYZ(0.0, 0.0, 0.0)
+      self.roiNode.SetRadiusXYZ(*(0.5*obb_diameter_mm))
+
+      # Position and orient ROI using a transform
+      obb_center_ras = obb_origin_ras+0.5*(obb_diameter_mm[0] * obb_direction_ras_x + obb_diameter_mm[1] * obb_direction_ras_y + obb_diameter_mm[2] * obb_direction_ras_z)
+      boundingBoxToRasTransform = np.row_stack((np.column_stack((obb_direction_ras_x, obb_direction_ras_y, obb_direction_ras_z, obb_center_ras)), (0, 0, 0, 1)))
+      boundingBoxToRasTransformMatrix = slicer.util.vtkMatrixFromArray(boundingBoxToRasTransform)
+      self.transformNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTransformNode")
+      self.transformNode.SetAndObserveMatrixTransformToParent(boundingBoxToRasTransformMatrix)
+      self.roiNode.SetAndObserveTransformNodeID(self.transformNode.GetID())
+      self.number_lesions+=1
+
+      # Modify display features 
+      self.roiNode.GetMarkupsDisplayNode().SetTextScale(0)
+      self.roiNode.GetMarkupsDisplayNode().SetSelectedColor(0.847,0.184,0.137)
+      self.roiNode.GetMarkupsDisplayNode().SetGlyphScale(0)
+      self.roiNode.GetMarkupsDisplayNode().SetFillOpacity(False)
+
+    # Hide ROIs Nodes by default
+    pos=0
+    roi_nodes=slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")
+    for i in iter(slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")):
+      roi_nodes[pos].SetDisplayVisibility(False)
+      pos+=1
+
   def drawSegmentation(self):
     """
     Draw the segmented mask
