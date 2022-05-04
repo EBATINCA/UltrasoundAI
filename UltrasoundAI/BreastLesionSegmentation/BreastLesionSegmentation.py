@@ -230,7 +230,7 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     self.inputImageArray = None
 
     # Segmentation model
-    self.defaultModelFilePath = self.moduleWidget.resourcePath('Model/segmentation_model.pth')
+    self.defaultModelFilePath = self.moduleWidget.resourcePath('Model/segmentation_model_0001.pth')
     self.segmentationModel = None
 
     # Red slice
