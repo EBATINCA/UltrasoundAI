@@ -20,3 +20,22 @@ The models used for classification and segmentation have been trained using [Bre
 
 Al-Dhabyani W, Gomaa M, Khaled H, Fahmy A. Dataset of breast ultrasound images. Data in Brief. 2020 Feb;28:104863. DOI: 10.1016/j.dib.2019.104863
 
+## Running the training notebook
+###Installing Torch + Cuda
+You will need a graphics card from Nvidia to properly run Cuda. There are workarounds to make other graphic cards work, but they have to be configured manually.
+1. Download and install the Cuda software from Nvidia: https://developer.nvidia.com/cuda-downloads
+2. Setup a Python environment. (I've used Python 3.7.13)
+3. Install the torch and cuda package: `pip install torch==1.7.1+cu110 torchvision==0.8.2+cu110 torchaudio==0.7.2 -f https://download.pytorch.org/whl/torch_stable.html` 
+
+###Other libraries:
+`pip install torch-utils
+pip install tensorboard
+pip install segmentation_models_pytorch
+pip install torchsummary`
+
+## Other libraries
+###SimpleITK
+Needed for working with NIFTI files.
+`conda install -c simpleitk simpleitk` (if using anaconda)
+or 
+`pip install SimpleITK`
