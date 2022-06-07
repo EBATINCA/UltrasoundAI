@@ -156,6 +156,7 @@ class BreastLesionSegmentationWidget(ScriptedLoadableModuleWidget, VTKObservatio
   def onInputSelectorChanged(self):
     # Update GUI
     self.updateGUIFromMRML()
+    self.logic.deleteResults()
  
   #------------------------------------------------------------------------------
   def onModelPathChanged(self):
@@ -358,46 +359,35 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     Display segmentation in slice view
     :return: True on success, False on error
     """
-    if self.outputVolumeNode:
-      # Delete previous segmentation if any
-      if self.segmentationNode:
-        slicer.mrmlScene.RemoveNode(self.segmentationNode)
-        self.segmentationNode = None
+    # Create segmentation
+    self.segmentationNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
+    self.segmentationNode.CreateDefaultDisplayNodes() # only needed for display
+    self.segmentationNode.SetReferenceImageGeometryParameterFromVolumeNode(self.outputVolumeNode)
+    self.addedSegmentID = self.segmentationNode.GetSegmentation().AddEmptySegment("Breast Lesion")
 
-      # Delete previous segment editor node if any
-      if self.segmentEditorNode:
-        slicer.mrmlScene.RemoveNode(self.segmentEditorNode)
-        self.segmentEditorNode = None
+    # Create segment editor to get access to effects
+    segmentEditorWidget = slicer.qMRMLSegmentEditorWidget()
+    segmentEditorWidget.setMRMLScene(slicer.mrmlScene)
+    self.segmentEditorNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentEditorNode")
+    segmentEditorWidget.setMRMLSegmentEditorNode(self.segmentEditorNode)
+    segmentEditorWidget.setSegmentationNode(self.segmentationNode)
+    segmentEditorWidget.setMasterVolumeNode(self.outputVolumeNode)
 
-      # Create segmentation
-      self.segmentationNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
-      self.segmentationNode.CreateDefaultDisplayNodes() # only needed for display
-      self.segmentationNode.SetReferenceImageGeometryParameterFromVolumeNode(self.outputVolumeNode)
-      self.addedSegmentID = self.segmentationNode.GetSegmentation().AddEmptySegment("Breast Lesion")
+    # Thresholding
+    segmentEditorWidget.setActiveEffectByName("Threshold")
+    effect = segmentEditorWidget.activeEffect()
+    effect.setParameter("MinimumThreshold","35")
+    effect.setParameter("MaximumThreshold","695")
+    effect.self().onApply()
 
-      # Create segment editor to get access to effects
-      segmentEditorWidget = slicer.qMRMLSegmentEditorWidget()
-      segmentEditorWidget.setMRMLScene(slicer.mrmlScene)
-      self.segmentEditorNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentEditorNode")
-      segmentEditorWidget.setMRMLSegmentEditorNode(self.segmentEditorNode)
-      segmentEditorWidget.setSegmentationNode(self.segmentationNode)
-      segmentEditorWidget.setMasterVolumeNode(self.outputVolumeNode)
-
-      # Thresholding
-      segmentEditorWidget.setActiveEffectByName("Threshold")
-      effect = segmentEditorWidget.activeEffect()
-      effect.setParameter("MinimumThreshold","35")
-      effect.setParameter("MaximumThreshold","695")
-      effect.self().onApply()
-
-      # Split island to segments
-      segmentEditorWidget.setActiveEffectByName("Islands")
-      effect = segmentEditorWidget.activeEffect()
-      operationName = 'SPLIT_ISLANDS_TO_SEGMENTS'
-      minsize = 500
-      effect.setParameter("Operation", operationName)
-      effect.setParameter("MinimumSize",minsize)
-      effect.self().onApply()
+    # Split island to segments
+    segmentEditorWidget.setActiveEffectByName("Islands")
+    effect = segmentEditorWidget.activeEffect()
+    operationName = 'SPLIT_ISLANDS_TO_SEGMENTS'
+    minsize = 500
+    effect.setParameter("Operation", operationName)
+    effect.setParameter("MinimumSize",minsize)
+    effect.self().onApply()
 
   #------------------------------------------------------------------------------
   def saveMask(self, maskPath):
@@ -473,11 +463,6 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     self.segStatLogic.computeStatistics()
     stats = self.segStatLogic.getStatistics()
 
-    # Delete previous markup point if any
-    if self.pointListNode:
-      slicer.mrmlScene.RemoveNode(self.pointListNode)
-      self.pointListNode = None
-    
     # Place a markup point in each centroid
     self.pointListNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
     self.pointListNode.SetName("Center point")
@@ -654,25 +639,6 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     self.segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.obb_direction_ras_z.enabled",str(True))
     self.segStatLogic.computeStatistics()
     stats = self.segStatLogic.getStatistics()
-
-    # Delete previous Transform point if any
-    if self.transformNode:
-      transform_Nodes=slicer.util.getNodesByClass("vtkMRMLTransformNode")
-      pos=0
-      for i in iter(slicer.util.getNodesByClass("vtkMRMLTransformNode")):
-        slicer.mrmlScene.RemoveNode(transform_Nodes[pos])
-        pos+=1
-      self.transformNode=None
-      pos=0
-
-    # Delete previous roi if any
-    if self.roiNode:
-      roi_nodes=slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")
-      for i in iter(slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")):
-        slicer.mrmlScene.RemoveNode(roi_nodes[pos])
-        pos+=1
-      self.roiNode=None
-      pos=0
     
     # Draw ROI for each oriented bounding box
     self.number_lesions=0
@@ -741,6 +707,46 @@ class BreastLesionSegmentationLogic(ScriptedLoadableModuleLogic, VTKObservationM
     for i in iter(slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")):
       roi_nodes[pos].SetDisplayVisibility(True)
       pos+=1
+
+
+  def deleteResults(self):
+      """
+     Delete previous data when a new image is selected
+      """
+
+      # Delete previous segmentation if any
+      if self.segmentationNode:
+        slicer.mrmlScene.RemoveNode(self.segmentationNode)
+        self.segmentationNode = None
+
+      # Delete previous segment editor node if any
+      if self.segmentEditorNode:
+        slicer.mrmlScene.RemoveNode(self.segmentEditorNode)
+        self.segmentEditorNode = None
+        
+      # Delete previous markup point if any
+      if self.pointListNode:
+          slicer.mrmlScene.RemoveNode(self.pointListNode)
+          self.pointListNode = None
+
+      # Delete previous Transform point if any
+      if self.transformNode:
+        transform_Nodes=slicer.util.getNodesByClass("vtkMRMLTransformNode")
+        pos=0
+        for i in iter(slicer.util.getNodesByClass("vtkMRMLTransformNode")):
+          slicer.mrmlScene.RemoveNode(transform_Nodes[pos])
+          pos+=1
+        self.transformNode=None
+        pos=0
+
+      # Delete previous roi if any
+      if self.roiNode:
+        roi_nodes=slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")
+        for i in iter(slicer.util.getNodesByClass("vtkMRMLMarkupsROINode")):
+          slicer.mrmlScene.RemoveNode(roi_nodes[pos])
+          pos+=1
+        self.roiNode=None
+        pos=0
 
 #------------------------------------------------------------------------------
 #
