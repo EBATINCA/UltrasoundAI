@@ -2,7 +2,10 @@
 3D Slicer extension containing modules to deploy deep learning models for classification and segmentation of ultrasound images.
 
 ## Prerequisites
-* Install **SlicerOpenCV** extension from the 3D Slicer Extension Manager.
+* Install **SlicerOpenCV** extension from the 3D Slicer Extension Manager. If you are using Slicer 5.0.2 or later open the Python interactor in Slicer and type the following command:</br>
+```python
+slicer.util.pip_install("opencv-python")
+```
 * Install PyTorch in 3D Slicer's Python console: [install PyTorch](https://pytorch.org/). 
 For that, open the Python interactor in Slicer and type the following command:</br>
 ```python
